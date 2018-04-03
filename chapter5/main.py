@@ -96,7 +96,7 @@ $ cabocha -f1 neko.txt -o neko.txt.cabocha
 3文目の形態素列を表示せよ．
 '''
 from typing import List, Tuple
-from chapter5.util import Chunk, Morph, ReceivedRelative
+from chapter5.util import Chunk, Morph, ReceivedRelative, PartOfSpeech, relative_pair, modifiee_modifiers
 import re
 
 
@@ -173,23 +173,19 @@ for sequence in sequences:
     sentence = []
 
 
-# 8文目の中身を確認
-for chunk in sentences[8]:
-    print(str(chunk))
+# # 8文目の中身を確認
+# for chunk in sentences[8]:
+#     print(str(chunk))
 
 '''
 42. 係り元と係り先の文節の表示
 係り元の文節と係り先の文節のテキストをタブ区切り形式ですべて抽出せよ．
 ただし，句読点などの記号は出力しないようにせよ．
 '''
-for sentence in sentences:
-    print()
-    for index, chunk in enumerate(sentence):
-        if index == len(sentence) - 1:
-            break
-        modifier: str = chunk.surface_words_except_syntax()
-        modifiee: str = sentence[chunk.received_relative.chunk_number_modifiee].surface_words_except_syntax()
-        print(modifier + "\t" + modifiee)
+# for sentence in sentences:
+#     pairs: List[Tuple[Chunk, Chunk]] = relative_pair(chunk_list=sentence)
+#     for pair in pairs:
+#         print(pair[0].surface_words(need_syntax=True) + "\t" + pair[1].surface_words(need_syntax=True))
 
 '''
 43. 名詞を含む文節が動詞を含む文節に係るものを抽出
@@ -197,17 +193,11 @@ for sentence in sentences:
 ただし，句読点などの記号は出力しないようにせよ．
 '''
 for sentence in sentences:
-    print()
-    for index, chunk in enumerate(sentence):
-        if index == len(sentence) - 1:
-            break
-        if not chunk.is_contain_noun():
-            continue
-        modifier: str = chunk.surface_words_except_syntax()
-        if not sentence[chunk.received_relative.chunk_number_modifiee].is_contain_verb():
-            continue
-        modifiee: str = sentence[chunk.received_relative.chunk_number_modifiee].surface_words_except_syntax()
-        print(modifier + "\t" + modifiee)
+    pairs: List[Tuple[Chunk, Chunk]] = relative_pair(chunk_list=sentence,
+                                                     modifier_contains_pos=PartOfSpeech.NOUN,
+                                                     modifiee_contains_pos=PartOfSpeech.VERB)
+    for pair in pairs:
+        print(pair[0].surface_words(need_syntax=True) + "\t" + pair[1].surface_words(need_syntax=True))
 
 '''
 44. 係り受け木の可視化
@@ -222,35 +212,26 @@ graphvizのインストールが必要
 from pydotplus import Dot, Node, Edge
 
 dot: Dot = Dot(graph_type="digraph")
-node_list: List[Tuple[Node, int]] = []
-for index, chunk in enumerate(sentences[5]):
-    word: str = chunk.surface_words_except_syntax()
-    chunk_number_modifiee: int = chunk.received_relative.chunk_number_modifiee
-    node: Node = Node(word)
-    dot.add_node(node)
-    node_list.append((node, chunk_number_modifiee))
+pairs: List[Tuple[Chunk, Chunk]] = relative_pair(chunk_list=sentences[10])
 
-for index, node in enumerate(node_list):
-    if index == len(node_list) - 1:
-        continue
-    node_modifier: Node = node[0]
-    node_modifee: Node = node_list[node[1]][0]
-    dot.add_edge(Edge(node_modifier, node_modifee))
+for modifier, modifiee in pairs[:-1]:
+    node_modifier: Node = Node(modifier.surface_words())
+    node_modifiee: Node = Node(modifiee.surface_words())
+    dot.add_edge(Edge(node_modifier, node_modifiee))
 
-dot.write(path="test.dot.jpg", format="jpg")
-
+dot.write(path="test.dot2.jpg", format="jpg")
 
 '''
 45. 動詞の格パターンの抽出
-今回用いている文章をコーパスと見なし，日本語の述語が取りうる格を調査したい． 
-動詞を述語，動詞に係っている文節の助詞を格と考え，述語と格をタブ区切り形式で出力せよ． 
+今回用いている文章をコーパスと見なし，日本語の述語が取りうる格を調査したい．
+動詞を述語，動詞に係っている文節の助詞を格と考え，述語と格をタブ区切り形式で出力せよ．
 ただし，出力は以下の仕様を満たすようにせよ．
 
 動詞を含む文節において，最左の動詞の基本形を述語とする
 述語に係る助詞を格とする
 述語に係る助詞（文節）が複数あるときは，すべての助詞をスペース区切りで辞書順に並べる
 
-「吾輩はここで始めて人間というものを見た」という例文（neko.txt.cabochaの8文目）を考える． 
+「吾輩はここで始めて人間というものを見た」という例文（neko.txt.cabochaの8文目）を考える．
 この文は「始める」と「見る」の２つの動詞を含み，
 「始める」に係る文節は「ここで」，
 「見る」に係る文節は「吾輩は」と「ものを」と解析された場合は，
@@ -265,33 +246,155 @@ dot.write(path="test.dot.jpg", format="jpg")
 
 lines: List[str] = []
 for sentence in sentences:
-    # 動詞を含む文節中の動詞の基本形, 文節の番号を検出する
-    verb_and_chunk_number: List[Tuple[str, int]] = []
-    for index, chunk in enumerate(sentence):
-        if chunk.is_contain_verb():
-            for morph in chunk.morph_list:
-                if morph.pos == "動詞":
-                    verb_and_chunk_number.append((morph.base, index))
+    modifiee_modifiers_list: List[Tuple[Chunk, List[Chunk]]] = modifiee_modifiers(chunk_list=sentence,
+                                                                                  modifier_contains_pos=PartOfSpeech.PARTICLE,
+                                                                                  modifiee_contains_pos=PartOfSpeech.VERB)
 
-    # 助詞を含む文節中の助詞の基本形、係り先の文節番号を検出する
-    particle_and_modifee_number: List[Tuple[str, int]] = []
-    for index, chunk in enumerate(sentence):
-        if chunk.is_contain_particle():
-            modifiee_number: int = chunk.received_relative.chunk_number_modifiee
-            for morph in chunk.morph_list:
-                if morph.pos == "助詞":
-                    particle_and_modifee_number.append((morph.base, modifiee_number))
+    for modifiee_modifiers_ in modifiee_modifiers_list:
+        verb: str = modifiee_modifiers_[0].base_word(pos=PartOfSpeech.VERB)
+        particle_list: List[str] = map(lambda x: x.base_word(pos=PartOfSpeech.PARTICLE), modifiee_modifiers_[1])
+        lines.append(verb + "\t" + " ".join(particle_list) + "\n")
 
-    for verb, chunk_number in verb_and_chunk_number:
-        line: str = verb + "\t"
-        flag: bool = False  # 諦めた
-        for particle, modifiee_number in particle_and_modifee_number:
-            if chunk_number == modifiee_number:
-                flag = True
-                line += " " + particle
-        if flag:
-            lines.append(line)
-            print(line)
+with open("./chapter5/particle_pattern2.txt", "w") as file:
+    file.writelines(lines)
+
+'''
+コーパス中で頻出する述語と格パターンの組み合わせ
+'''
+from collections import Counter
+
+with open("./chapter5/particle_pattern2.txt", "r") as file:
+    lines: List[str] = file.readlines()
+
+counter: Counter = Counter(map(lambda x: x.strip("\n").replace("\t", " "), lines))
+print(counter.most_common(10))
+
+'''
+「する」「見る」「与える」という動詞の格パターン（コーパス中で出現頻度の高い順に並べよ）
+'''
+lines_suru: List[str] = filter(lambda x: x.split("\t")[0] == "する", lines)
+lines_miru: List[str] = filter(lambda x: x.split("\t")[0] == "見る", lines)
+lines_ataeru: List[str] = filter(lambda x: x.split("\t")[0] == "与える", lines)
+
+counter_suru: Counter = Counter(map(lambda x: x.strip("\n").replace("\t", " "), lines_suru))
+counter_miru: Counter = Counter(map(lambda x: x.strip("\n").replace("\t", " "), lines_miru))
+counter_ataeru: Counter = Counter(map(lambda x: x.strip("\n").replace("\t", " "), lines_ataeru))
+
+print(counter_suru.most_common(10))
+print(counter_miru.most_common(10))
+print(counter_ataeru.most_common(10))
+
+'''
+46. 動詞の格フレーム情報の抽出
+45のプログラムを改変し，述語と格パターンに続けて項（述語に係っている文節そのもの）をタブ区切り形式で出力せよ．
+45の仕様に加えて，以下の仕様を満たすようにせよ．
+
+項は述語に係っている文節の単語列とする（末尾の助詞を取り除く必要はない）
+述語に係る文節が複数あるときは，助詞と同一の基準・順序でスペース区切りで並べる
+「吾輩はここで始めて人間というものを見た」という例文（neko.txt.cabochaの8文目）を考える．
+この文は「始める」と「見る」の２つの動詞を含み，
+「始める」に係る文節は「ここで」，「見る」に係る文節は「吾輩は」と「ものを」と解析された場合は，
+次のような出力になるはずである．
+
+始める  で      ここで
+見る    は を   吾輩は ものを
+'''
+modifiee_modifiers_list: List[Tuple[Chunk, List[Chunk]]] = modifiee_modifiers(chunk_list=sentences[10],
+                                                                              modifier_contains_pos=PartOfSpeech.PARTICLE,
+                                                                              modifiee_contains_pos=PartOfSpeech.VERB)
+
+for modifiee_modifiers_ in modifiee_modifiers_list:
+    verb: str = modifiee_modifiers_[0].base_word(pos=PartOfSpeech.VERB)
+    particle: str = " ".join(map(lambda x: x.base_word(pos=PartOfSpeech.PARTICLE), modifiee_modifiers_[1]))
+    part: str = " ".join(map(lambda x: x.surface_words(), modifiee_modifiers_[1]))
+
+    print(verb + "\t" + particle + "\t" + part)
+
+'''
+47. 機能動詞構文のマイニング
+動詞のヲ格にサ変接続名詞が入っている場合のみに着目したい．46のプログラムを以下の仕様を満たすように改変せよ．
+
+「サ変接続名詞+を（助詞）」で構成される文節が動詞に係る場合のみを対象とする
+述語は「サ変接続名詞+を+動詞の基本形」とし，文節中に複数の動詞があるときは，最左の動詞を用いる
+述語に係る助詞（文節）が複数あるときは，すべての助詞をスペース区切りで辞書順に並べる
+述語に係る文節が複数ある場合は，すべての項をスペース区切りで並べる（助詞の並び順と揃えよ）
+例えば「別段くるにも及ばんさと、主人は手紙に返事をする。」という文から，以下の出力が得られるはずである．
+
+返事をする      と に は        及ばんさと 手紙に 主人は
+
+このプログラムの出力をファイルに保存し，以下の事項をUNIXコマンドを用いて確認せよ．
+コーパス中で頻出する述語（サ変接続名詞+を+動詞）
+コーパス中で頻出する述語と助詞パターン
+'''
+
+predicate_list: List[str] = []
+for sentence in sentences:
+    modifiee_modifiers_list: List[Tuple[Chunk, List[Chunk]]] = modifiee_modifiers(chunk_list=sentence,
+                                                                                  modifier_contains_pos=PartOfSpeech.PARTICLE,
+                                                                                  modifiee_contains_pos=PartOfSpeech.VERB)
+
+    for modifiee_modifiers_ in modifiee_modifiers_list:
+
+        modifier_list: List[Chunk] = modifiee_modifiers_[1]
+        chunk_sahen: Chunk = None
+        for chunk in modifier_list:
+            # サ変接続 名詞の形態素が含まれているかどうか
+            if "サ変接続" not in map(lambda x: x.pos1, chunk.morph_list):
+                continue
+            # 助詞がヲ格かどうか
+            if "を" not in map(lambda x: x.base, chunk.morph_list):
+                continue
+            chunk_sahen = chunk
+
+        # もし係り元にサ変接続名詞がなかったら次を探す
+        if not chunk_sahen:
+            continue
+
+        modifier_list.remove(chunk_sahen)
+
+        predicate: str = chunk_sahen.surface_words() + modifiee_modifiers_[0].base_word(pos=PartOfSpeech.VERB)
+        particle: str = " ".join(map(lambda x: x.base_word(pos=PartOfSpeech.PARTICLE), modifiee_modifiers_[1]))
+        part: str = " ".join(map(lambda x: x.surface_words(), modifiee_modifiers_[1]))
+
+        print("さへん: " + predicate + "\t" + particle + "\t" + part)
+
+        # 頻出する述語を調べる
+        predicate_list.append(predicate)
+
+counter: Counter = Counter(predicate_list)
+print(counter.most_common(100))
+
+
+'''
+48. 名詞から根へのパスの抽出
+文中のすべての名詞を含む文節に対し，その文節から構文木の根に至るパスを抽出せよ． 
+ただし，構文木上のパスは以下の仕様を満たすものとする．
+
+各文節は（表層形の）形態素列で表現する
+パスの開始文節から終了文節に至るまで，各文節の表現を"->"で連結する
+「吾輩はここで始めて人間というものを見た」という文（neko.txt.cabochaの8文目）から，次のような出力が得られるはずである．
+
+吾輩は -> 見た
+ここで -> 始めて -> 人間という -> ものを -> 見た
+人間という -> ものを -> 見た
+ものを -> 見た
+'''
+
+for sentence in sentences:
+
+    for chunk in sentence:
+        if not chunk.is_contain(pos=PartOfSpeech.NOUN):
+            continue
+
+        path: str = chunk.surface_words()
+        modifiee_number: int = chunk.modifiee_number()
+        while modifiee_number != -1:
+            next_chunk: Chunk = sentence[modifiee_number]
+            path += " -> " + next_chunk.surface_words()
+            modifiee_number = next_chunk.modifiee_number()
+        print(path)
+
+    print()
 
 
 
